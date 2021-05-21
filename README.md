@@ -9,6 +9,12 @@ Giza-py requires [Python 3.7](https://www.python.org/downloads/) or greater.
 ### .NET Core SDK
 Giza-py requires that the [.NET Core 3.1 SDK](https://dotnet.microsoft.com/download) is installed.
 
+### Giza-py
+To install Giza-py, simply clone the repo:
+```
+git clone https://github.com/sillsdev/giza-py.git
+```
+
 ### MGIZA++
 In order to install MGIZA++ on Linux/macOS, follow these steps:
 
@@ -83,4 +89,4 @@ Giza-py can also extract a bilingual lexicon from the trained alignment model.
 ```
 python3 giza.py --source <src_path> --target <trg_path> --lexicon <output_path>
 ```
-The score for each word pair is the maximum probability from the direct and inverse alignment model.
+The lexicon is extracted as a tab-separated text file. The score for each word pair is the maximum probability from the direct and inverse alignment model.
