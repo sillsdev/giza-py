@@ -43,10 +43,12 @@ class GizaAligner:
         self.model_dir.mkdir(exist_ok=True)
 
         if self.m4 is None or self.m4 > 0:
-            self._execute_mkcls(src_file_path)
-            self._execute_mkcls(trg_file_path)
+            self._execute_mkcls(src_file_path, "src")
+            self._execute_mkcls(trg_file_path, "trg")
 
-        src_trg_snt_file_path, trg_src_snt_file_path = self._execute_plain2snt(src_file_path, trg_file_path)
+        src_trg_snt_file_path, trg_src_snt_file_path = self._execute_plain2snt(
+            src_file_path, trg_file_path, "src", "trg"
+        )
 
         self._execute_snt2cooc(src_trg_snt_file_path)
         self._execute_snt2cooc(trg_src_snt_file_path)
@@ -83,40 +85,39 @@ class GizaAligner:
         lexicon = Lexicon.symmetrize(direct_lexicon, inverse_lexicon)
         lexicon.write(out_file_path)
 
-    def _execute_mkcls(self, input_file_path: Path) -> None:
+    def _execute_mkcls(self, input_file_path: Path, output_prefix: str) -> None:
         mkcls_path = self.bin_dir / "mkcls"
         if platform.system() == "Windows":
             mkcls_path = mkcls_path.with_suffix(".exe")
         if not mkcls_path.is_file():
             raise RuntimeError("mkcls is not installed.")
 
-        input_prefix = input_file_path.stem
-        output_file_path = self.model_dir / f"{input_prefix}.vcb.classes"
+
+        output_file_path = self.model_dir / f"{output_prefix}.vcb.classes"
 
         args: List[str] = [str(mkcls_path), "-n10", f"-p{input_file_path}", f"-V{output_file_path}"]
         subprocess.run(args)
 
-    def _execute_plain2snt(self, src_file_path: Path, trg_file_path: Path) -> Tuple[Path, Path]:
+    def _execute_plain2snt(
+        self, src_file_path: Path, trg_file_path: Path, output_src_prefix: str, output_trg_prefix: str
+    ) -> Tuple[Path, Path]:
         plain2snt_path = self.bin_dir / "plain2snt"
         if platform.system() == "Windows":
             plain2snt_path = plain2snt_path.with_suffix(".exe")
         if not plain2snt_path.is_file():
             raise RuntimeError("plain2snt is not installed.")
 
-        src_prefix = src_file_path.stem
-        trg_prefix = trg_file_path.stem
-
-        src_trg_snt_file_path = self.model_dir / f"{src_prefix}_{trg_prefix}.snt"
-        trg_src_snt_file_path = self.model_dir / f"{trg_prefix}_{src_prefix}.snt"
+        src_trg_snt_file_path = self.model_dir / f"{output_src_prefix}_{output_trg_prefix}.snt"
+        trg_src_snt_file_path = self.model_dir / f"{output_trg_prefix}_{output_src_prefix}.snt"
 
         args: List[str] = [
             str(plain2snt_path),
             str(src_file_path),
             str(trg_file_path),
             "-vcb1",
-            str(self.model_dir / f"{src_prefix}.vcb"),
+            str(self.model_dir / f"{output_src_prefix}.vcb"),
             "-vcb2",
-            str(self.model_dir / f"{trg_prefix}.vcb"),
+            str(self.model_dir / f"{output_trg_prefix}.vcb"),
             "-snt1",
             str(src_trg_snt_file_path),
             "-snt2",
