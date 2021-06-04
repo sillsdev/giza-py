@@ -12,6 +12,7 @@ def main() -> None:
     parser.add_argument("--source", type=str, required=True, metavar="PATH", help="The source corpus")
     parser.add_argument("--target", type=str, required=True, metavar="PATH", help="The target corpus")
     parser.add_argument("--alignments", type=str, default=None, metavar="PATH", help="The output alignments")
+    parser.add_argument("--probs", type=str, default=None, metavar="PATH", help="The output alignment probabilities")
     parser.add_argument("--lexicon", type=str, default=None, metavar="PATH", help="The output lexicon")
     parser.add_argument(
         "--model",
@@ -57,9 +58,10 @@ def main() -> None:
         aligner.train(source_path, target_path)
 
         if args.alignments is not None:
-            alignments_path = Path(args.alignments)
+            alignments_file_path = Path(args.alignments)
+            alignment_probs_file_path = Path(args.probs)
             print("Generating alignments...", end="", flush=True)
-            aligner.align(alignments_path, args.sym_heuristic)
+            aligner.align(alignments_file_path, alignment_probs_file_path, args.sym_heuristic)
             print(" done.")
         if args.lexicon is not None:
             lexicon_path = Path(args.lexicon)
