@@ -4,7 +4,7 @@ from pathlib import Path
 
 class Lexicon:
     @classmethod
-    def symmetrize(cls, direct_lexicon: "Lexicon", inverse_lexicon: "Lexicon") -> "Lexicon":
+    def symmetrize(cls, direct_lexicon: "Lexicon", inverse_lexicon: "Lexicon", threshold: float = 0.0) -> "Lexicon":
         src_words: Set[str] = set(direct_lexicon.source_words)
         src_words.update(inverse_lexicon.target_words)
 
@@ -17,7 +17,8 @@ class Lexicon:
                 direct_prob = direct_lexicon[src_word, trg_word]
                 inverse_prob = inverse_lexicon[trg_word, src_word]
                 prob = max(direct_prob, inverse_prob)
-                lexicon[src_word, trg_word] = prob
+                if prob > threshold:
+                    lexicon[src_word, trg_word] = prob
         return lexicon
 
     def __init__(self) -> None:

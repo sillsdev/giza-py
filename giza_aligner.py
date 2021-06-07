@@ -142,25 +142,12 @@ class GizaAligner:
             if alignment_probs_file is not None:
                 alignment_probs_file.close()
 
-    def get_direct_lexicon(self, include_special_tokens: bool = False) -> Lexicon:
+    def extract_lexicon(self, out_file_path: Path, threshold: float = 0.0) -> None:
         src_vocab = self._load_vocab("src")
         trg_vocab = self._load_vocab("trg")
-        return self._load_lexicon(
-            src_vocab,
-            trg_vocab,
-            "invswm",
-            include_special_tokens=include_special_tokens,
-        )
-
-    def get_inverse_lexicon(self, include_special_tokens: bool = False) -> Lexicon:
-        src_vocab = self._load_vocab("src")
-        trg_vocab = self._load_vocab("trg")
-        return self._load_lexicon(trg_vocab, src_vocab, "swm", include_special_tokens=include_special_tokens)
-
-    def extract_lexicon(self, out_file_path: Path) -> None:
-        direct_lexicon = self.get_direct_lexicon()
-        inverse_lexicon = self.get_inverse_lexicon()
-        lexicon = Lexicon.symmetrize(direct_lexicon, inverse_lexicon)
+        direct_lexicon = self._load_lexicon(src_vocab, trg_vocab, "invswm", threshold=threshold)
+        inverse_lexicon = self._load_lexicon(trg_vocab, src_vocab, "swm", threshold=threshold)
+        lexicon = Lexicon.symmetrize(direct_lexicon, inverse_lexicon, threshold=threshold)
         lexicon.write(out_file_path)
 
     def _execute_mkcls(self, input_file_path: Path, output_prefix: str) -> None:
@@ -341,7 +328,8 @@ class GizaAligner:
         src_vocab: List[str],
         trg_vocab: List[str],
         align_model: str,
-        include_special_tokens: bool,
+        threshold: float = 0.0,
+        include_special_tokens: bool = False,
     ) -> Lexicon:
         lexicon = Lexicon()
         model_path = self.model_dir / f"src_trg_{align_model}.t{self.file_suffix}"
@@ -353,18 +341,19 @@ class GizaAligner:
                 src_word = src_vocab[src_index]
                 trg_word = trg_vocab[trg_index]
                 prob = float(prob_str)
-                lexicon[src_word, trg_word] = prob
+                if prob > threshold:
+                    lexicon[src_word, trg_word] = prob
         return lexicon
 
 
 class Ibm1GizaAligner(GizaAligner):
-    def __init__(self, bin_dir: Path, model_dir: Path) -> None:
-        super().__init__(bin_dir, model_dir, mh=0, m3=0, m4=0)
+    def __init__(self, bin_dir: Path, model_dir: Path, m1: Optional[int] = None) -> None:
+        super().__init__(bin_dir, model_dir, m1=m1, mh=0, m3=0, m4=0)
 
 
 class Ibm2GizaAligner(GizaAligner):
-    def __init__(self, bin_dir: Path, model_dir: Path) -> None:
-        super().__init__(bin_dir, model_dir, m2=5, mh=0, m3=0, m4=0)
+    def __init__(self, bin_dir: Path, model_dir: Path, m1: Optional[int] = None, m2: Optional[int] = None) -> None:
+        super().__init__(bin_dir, model_dir, m1=m1, m2=5 if m2 is None else m2, mh=0, m3=0, m4=0)
 
     def _init_alignment_probs_data(self) -> Any:
         return {
@@ -410,8 +399,8 @@ class Ibm2GizaAligner(GizaAligner):
 
 
 class HmmGizaAligner(GizaAligner):
-    def __init__(self, bin_dir: Path, model_dir: Path) -> None:
-        super().__init__(bin_dir, model_dir, m3=0, m4=0)
+    def __init__(self, bin_dir: Path, model_dir: Path, m1: Optional[int] = None, mh: Optional[int] = None) -> None:
+        super().__init__(bin_dir, model_dir, m1=m1, mh=mh, m3=0, m4=0)
 
     def align(
         self,
@@ -425,8 +414,15 @@ class HmmGizaAligner(GizaAligner):
 
 
 class Ibm3GizaAligner(GizaAligner):
-    def __init__(self, bin_dir: Path, model_dir: Path) -> None:
-        super().__init__(bin_dir, model_dir, m4=0)
+    def __init__(
+        self,
+        bin_dir: Path,
+        model_dir: Path,
+        m1: Optional[int] = None,
+        mh: Optional[int] = None,
+        m3: Optional[int] = None,
+    ) -> None:
+        super().__init__(bin_dir, model_dir, m1=m1, mh=mh, m3=m3, m4=0)
 
     def _init_alignment_probs_data(self) -> Any:
         return {
@@ -472,8 +468,16 @@ class Ibm3GizaAligner(GizaAligner):
 
 
 class Ibm4GizaAligner(GizaAligner):
-    def __init__(self, bin_dir: Path, model_dir: Path) -> None:
-        super().__init__(bin_dir, model_dir)
+    def __init__(
+        self,
+        bin_dir: Path,
+        model_dir: Path,
+        m1: Optional[int] = None,
+        mh: Optional[int] = None,
+        m3: Optional[int] = None,
+        m4: Optional[int] = None,
+    ) -> None:
+        super().__init__(bin_dir, model_dir, m1=m1, mh=mh, m3=m3, m4=m4)
 
     def _init_alignment_probs_data(self) -> Any:
         return {
