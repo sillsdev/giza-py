@@ -1,13 +1,13 @@
 import platform
 import shutil
 import subprocess
-from pathlib import Path
-from typing import IO, Any, Dict, List, Optional, Tuple
 from bisect import insort_left
 from math import ceil
+from pathlib import Path
+from typing import IO, Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from lexicon import Lexicon
-from utils import load_corpus, write_corpus
+from utils import load_corpus, parse_giza_alignments, remove_bom_inplace, write_corpus
 
 MAX_SENT_LENGTH = 101
 PROB_SMOOTH = 1e-7
@@ -46,32 +46,39 @@ class GizaAligner:
             suffix = f"1.{5 if self.m1 is None else self.m1}"
         return suffix
 
-    def train(self, src_file_path: Path, trg_file_path: Path) -> None:
+    def train(self, src_file_path: Path, trg_file_path: Path, quiet: bool = False) -> None:
         self.model_dir.mkdir(exist_ok=True)
-        shutil.copyfile(src_file_path, self.model_dir / "src.txt")
-        shutil.copyfile(trg_file_path, self.model_dir / "trg.txt")
+        dest_src_file_path = self.model_dir / "src.txt"
+        shutil.copyfile(src_file_path, dest_src_file_path)
+        src_file_path = dest_src_file_path
+        dest_trg_file_path = self.model_dir / "trg.txt"
+        shutil.copyfile(trg_file_path, dest_trg_file_path)
+        trg_file_path = dest_trg_file_path
+
+        remove_bom_inplace(src_file_path)
+        remove_bom_inplace(trg_file_path)
 
         if self.m4 is None or self.m4 > 0:
-            self._execute_mkcls(src_file_path, "src")
-            self._execute_mkcls(trg_file_path, "trg")
+            self._execute_mkcls(src_file_path, "src", quiet)
+            self._execute_mkcls(trg_file_path, "trg", quiet)
 
         src_trg_snt_file_path, trg_src_snt_file_path = self._execute_plain2snt(
-            src_file_path, trg_file_path, "src", "trg"
+            src_file_path, trg_file_path, "src", "trg", quiet
         )
 
-        self._execute_snt2cooc(src_trg_snt_file_path)
-        self._execute_snt2cooc(trg_src_snt_file_path)
+        self._execute_snt2cooc(src_trg_snt_file_path, quiet)
+        self._execute_snt2cooc(trg_src_snt_file_path, quiet)
 
         src_trg_prefix = src_trg_snt_file_path.with_suffix("")
         src_trg_output_prefix = src_trg_prefix.parent / (src_trg_prefix.name + "_invswm")
-        self._execute_mgiza(src_trg_snt_file_path, src_trg_output_prefix)
+        self._execute_mgiza(src_trg_snt_file_path, src_trg_output_prefix, quiet)
         src_trg_alignments_file_path = src_trg_output_prefix.with_suffix(f".A{self.file_suffix}.all")
-        self._merge_alignment_parts(src_trg_output_prefix, src_trg_alignments_file_path)
+        self._save_alignments(src_trg_output_prefix, src_trg_alignments_file_path)
 
         trg_src_output_prefix = src_trg_prefix.parent / (src_trg_prefix.name + "_swm")
-        self._execute_mgiza(trg_src_snt_file_path, trg_src_output_prefix)
+        self._execute_mgiza(trg_src_snt_file_path, trg_src_output_prefix, quiet)
         trg_src_alignments_file_path = trg_src_output_prefix.with_suffix(f".A{self.file_suffix}.all")
-        self._merge_alignment_parts(trg_src_output_prefix, trg_src_alignments_file_path)
+        self._save_alignments(trg_src_output_prefix, trg_src_alignments_file_path)
 
     def align(
         self,
@@ -93,54 +100,71 @@ class GizaAligner:
         trg_file_path = self.model_dir / "trg.txt"
 
         with open(alignments_file_path, "w", encoding="utf-8", newline="\n") as alignments_file, open(
-            sym_alignments_file_path, "r", encoding="utf-8-sig"
+            sym_alignments_file_path,
+            "r",
+            encoding="utf-8-sig",
         ) as sym_alignments_file:
             alignment_probs_file: Optional[IO] = None
             alignment_probs_data: Any = None
+            direct_alignments_file: Optional[IO] = None
+            inverse_alignments_file: Optional[IO] = None
+            direct_alignments: Optional[Iterator[Set[Tuple[int, int]]]] = None
+            inverse_alignments: Optional[Iterator[Set[Tuple[int, int]]]] = None
             if alignment_probs_file_path is not None:
                 alignment_probs_file = open(alignment_probs_file_path, "w", encoding="utf-8", newline="\n")
                 alignment_probs_data = self._init_alignment_probs_data()
-            for src_str, trg_str in zip(load_corpus(src_file_path), load_corpus(trg_file_path)):
-                if len(src_str) == 0 or len(trg_str) == 0:
-                    if alignment_probs_file is not None:
-                        alignment_probs_file.write("\n")
-                    alignments_file.write("\n")
-                    continue
+                direct_alignments_file = open(src_trg_alignments_file_path, "r", encoding="utf-8-sig")
+                direct_alignments = iter(parse_giza_alignments(direct_alignments_file))
+                inverse_alignments_file = open(trg_src_alignments_file_path, "r", encoding="utf-8-sig")
+                inverse_alignments = iter(parse_giza_alignments(inverse_alignments_file))
+            try:
+                for src_str, trg_str in zip(load_corpus(src_file_path), load_corpus(trg_file_path)):
+                    if len(src_str) == 0 or len(trg_str) == 0:
+                        if alignment_probs_file is not None:
+                            alignment_probs_file.write("\n")
+                        alignments_file.write("\n")
+                        continue
 
-                src_tokens = src_str.split()
-                trg_tokens = trg_str.split()
-                alignment_str = sym_alignments_file.readline().strip()
+                    src_tokens = src_str.split()
+                    trg_tokens = trg_str.split()
+                    alignment_str = sym_alignments_file.readline().strip()
 
-                if alignment_probs_file is not None:
-                    direct_alignment: List[Tuple[int, int]] = []
-                    inverse_alignment: List[Tuple[int, int]] = []
-                    for word_pair_str in alignment_str.split():
-                        src_index_str, trg_index_str = word_pair_str.split("-", maxsplit=2)
-                        src_index = int(src_index_str)
-                        trg_index = int(trg_index_str)
-
-                        direct_alignment.append((src_index, trg_index))
-                        inverse_alignment.append((trg_index, src_index))
-
-                    direct_probs = self._get_alignment_probs(
-                        alignment_probs_data, src_tokens, trg_tokens, direct_alignment, True
-                    )
-                    inverse_probs = self._get_alignment_probs(
-                        alignment_probs_data, trg_tokens, src_tokens, inverse_alignment, False
-                    )
-
-                    first = True
-                    for (src_index, trg_index), direct_prob, inverse_prob in zip(
-                        direct_alignment, direct_probs, inverse_probs
+                    if (
+                        alignment_probs_file is not None
+                        and direct_alignments is not None
+                        and inverse_alignments is not None
                     ):
-                        if not first:
-                            alignment_probs_file.write(" ")
-                        alignment_probs_file.write(str(round(max(direct_prob, inverse_prob), 8)))
-                        first = False
-                    alignment_probs_file.write("\n")
-                alignments_file.write(alignment_str + "\n")
-            if alignment_probs_file is not None:
-                alignment_probs_file.close()
+                        direct_alignment = next(direct_alignments)
+                        inverse_alignment = next(inverse_alignments)
+
+                        direct_probs = self._get_alignment_probs(
+                            alignment_probs_data, src_tokens, trg_tokens, direct_alignment, True
+                        )
+                        inverse_probs = self._get_alignment_probs(
+                            alignment_probs_data, trg_tokens, src_tokens, inverse_alignment, False
+                        )
+
+                        first = True
+                        for word_pair_str in alignment_str.split():
+                            src_index_str, trg_index_str = word_pair_str.split("-", maxsplit=2)
+                            src_index = int(src_index_str)
+                            trg_index = int(trg_index_str)
+                            direct_prob = direct_probs.get((src_index, trg_index), 0.0)
+                            inverse_prob = inverse_probs.get((trg_index, src_index), 0.0)
+                            if not first:
+                                alignment_probs_file.write(" ")
+                            alignment_probs_file.write(str(round(max(direct_prob, inverse_prob), 8)))
+                            first = False
+
+                        alignment_probs_file.write("\n")
+                    alignments_file.write(alignment_str + "\n")
+            finally:
+                if alignment_probs_file is not None:
+                    alignment_probs_file.close()
+                if direct_alignments_file is not None:
+                    direct_alignments_file.close()
+                if inverse_alignments_file is not None:
+                    inverse_alignments_file.close()
 
     def extract_lexicon(self, out_file_path: Path, threshold: float = 0.0) -> None:
         src_vocab = self._load_vocab("src")
@@ -150,7 +174,7 @@ class GizaAligner:
         lexicon = Lexicon.symmetrize(direct_lexicon, inverse_lexicon, threshold=threshold)
         lexicon.write(out_file_path)
 
-    def _execute_mkcls(self, input_file_path: Path, output_prefix: str) -> None:
+    def _execute_mkcls(self, input_file_path: Path, output_prefix: str, quiet: bool) -> None:
         mkcls_path = self.bin_dir / "mkcls"
         if platform.system() == "Windows":
             mkcls_path = mkcls_path.with_suffix(".exe")
@@ -165,14 +189,10 @@ class GizaAligner:
             f"-p{input_file_path}",
             f"-V{output_file_path}",
         ]
-        subprocess.run(args)
+        subprocess.run(args, stdout=subprocess.DEVNULL if quiet else None, stderr=subprocess.DEVNULL if quiet else None)
 
     def _execute_plain2snt(
-        self,
-        src_file_path: Path,
-        trg_file_path: Path,
-        output_src_prefix: str,
-        output_trg_prefix: str,
+        self, src_file_path: Path, trg_file_path: Path, output_src_prefix: str, output_trg_prefix: str, quiet: bool
     ) -> Tuple[Path, Path]:
         plain2snt_path = self.bin_dir / "plain2snt"
         if platform.system() == "Windows":
@@ -196,10 +216,10 @@ class GizaAligner:
             "-snt2",
             str(trg_src_snt_file_path),
         ]
-        subprocess.run(args)
+        subprocess.run(args, stdout=subprocess.DEVNULL if quiet else None, stderr=subprocess.DEVNULL)
         return src_trg_snt_file_path, trg_src_snt_file_path
 
-    def _execute_snt2cooc(self, snt_file_path: Path) -> None:
+    def _execute_snt2cooc(self, snt_file_path: Path, quiet: bool) -> None:
         snt2cooc_path = self.bin_dir / "snt2cooc"
         if platform.system() == "Windows":
             snt2cooc_path = snt2cooc_path.with_suffix(".exe")
@@ -217,9 +237,9 @@ class GizaAligner:
             str(snt_dir / f"{prefix2}.vcb"),
             str(snt_file_path),
         ]
-        subprocess.run(args)
+        subprocess.run(args, stdout=subprocess.DEVNULL if quiet else None, stderr=subprocess.DEVNULL)
 
-    def _execute_mgiza(self, snt_file_path: Path, output_path: Path) -> None:
+    def _execute_mgiza(self, snt_file_path: Path, output_path: Path, quiet: bool) -> None:
         mgiza_path = self.bin_dir / "mgiza"
         if platform.system() == "Windows":
             mgiza_path = mgiza_path.with_suffix(".exe")
@@ -245,8 +265,10 @@ class GizaAligner:
         ]
         if self.m1 is not None:
             args.extend(["-m1", str(self.m1)])
-        if self.m2 is not None and self.mh is None:
-            args.extend(["-m2", str(self.m2), "-mh", "0"])
+        if self.m2 is not None and (self.mh is None or self.mh == 0):
+            args.extend(["-m2", str(self.m2)])
+            if self.mh is None:
+                args.extend(["-mh", "0"])
         if self.mh is not None:
             args.extend(["-mh", str(self.mh)])
         if self.m3 is not None:
@@ -261,9 +283,9 @@ class GizaAligner:
                 args.extend(["-t2", str(self.m2)])
             elif self.m1 is None or self.m1 > 0:
                 args.extend(["-t1", str(5 if self.m1 is None else self.m1)])
-        subprocess.run(args, stderr=subprocess.DEVNULL)
+        subprocess.run(args, stdout=subprocess.DEVNULL if quiet else None, stderr=subprocess.DEVNULL)
 
-    def _merge_alignment_parts(self, model_prefix: Path, output_file_path: Path) -> None:
+    def _save_alignments(self, model_prefix: Path, output_file_path: Path) -> None:
         alignments: List[Tuple[int, str]] = []
         for input_file_path in model_prefix.parent.glob(model_prefix.name + f".A{self.file_suffix}.part*"):
             with open(input_file_path, "r", encoding="utf-8") as in_file:
@@ -310,9 +332,9 @@ class GizaAligner:
         return None
 
     def _get_alignment_probs(
-        self, data: Any, src_words: List[str], trg_words: List[str], alignment: List[Tuple[int, int]], is_direct: bool
-    ) -> List[float]:
-        return [1.0 / (len(src_words) + 1)] * len(alignment)
+        self, data: Any, src_words: List[str], trg_words: List[str], alignment: Set[Tuple[int, int]], is_direct: bool
+    ) -> Dict[Tuple[int, int], float]:
+        return {word_pair: 1.0 / (len(src_words) + 1) for word_pair in alignment}
 
     def _load_vocab(self, side: str) -> List[str]:
         vocab_path = self.model_dir / f"{side}.vcb"
@@ -361,16 +383,19 @@ class Ibm2GizaAligner(GizaAligner):
             "inverse_alignment_table": self._load_alignment_table("swm"),
         }
 
+    def _save_alignments(self, model_prefix: Path, output_file_path: Path) -> None:
+        shutil.move(str(model_prefix) + f".A{self.file_suffix}", output_file_path)
+
     def _get_alignment_probs(
-        self, data: Any, src_words: List[str], trg_words: List[str], alignment: List[Tuple[int, int]], is_direct: bool
-    ) -> List[float]:
+        self, data: Any, src_words: List[str], trg_words: List[str], alignment: Set[Tuple[int, int]], is_direct: bool
+    ) -> Dict[Tuple[int, int], float]:
         alignment_table: Dict[Tuple[int, int], Dict[int, float]]
         if is_direct:
             alignment_table = data["direct_alignment_table"]
         else:
             alignment_table = data["inverse_alignment_table"]
 
-        probs: List[float] = []
+        probs: Dict[Tuple[int, int], float] = {}
         for src_index, trg_index in alignment:
             i = src_index + 1
             j = trg_index + 1
@@ -378,23 +403,33 @@ class Ibm2GizaAligner(GizaAligner):
             elem = alignment_table.get((j, len(src_words)))
             if elem is not None:
                 prob = elem.get(i, 0.0)
-            probs.append(max(PROB_SMOOTH, prob))
+            probs[(src_index, trg_index)] = max(PROB_SMOOTH, prob)
         return probs
 
     def _load_alignment_table(self, align_model: str) -> Dict[Tuple[int, int], Dict[int, float]]:
         table: Dict[Tuple[int, int], Dict[int, float]] = {}
-        for line in load_corpus(self.model_dir / f"src_trg_{align_model}.a3.final"):
+        totals: Dict[Tuple[int, int], float] = {}
+        ext = "ap" if platform.system() == "Windows" else "a"
+        for line in load_corpus(self.model_dir / f"src_trg_{align_model}.{ext}{self.file_suffix}"):
             fields = line.split(maxsplit=5)
             i = int(fields[0])
             j = int(fields[1])
             slen = int(fields[2])
-            prob = float(fields[4])
+            count = float(fields[4])
             key = (j, slen)
-            probs = table.get(key)
-            if probs is None:
-                probs = {}
-                table[key] = probs
-            probs[i] = prob
+            counts = table.get(key)
+            if counts is None:
+                counts = {}
+                table[key] = counts
+            counts[i] = count
+            total = totals.get(key, 0.0)
+            totals[key] = total + count
+
+        for key, counts in table.items():
+            total = totals[key]
+            for j, count in counts.items():
+                counts[j] = count / total
+
         return table
 
 
@@ -432,15 +467,15 @@ class Ibm3GizaAligner(GizaAligner):
         }
 
     def _get_alignment_probs(
-        self, data: Any, src_words: List[str], trg_words: List[str], alignment: List[Tuple[int, int]], is_direct: bool
-    ) -> List[float]:
+        self, data: Any, src_words: List[str], trg_words: List[str], alignment: Set[Tuple[int, int]], is_direct: bool
+    ) -> Dict[Tuple[int, int], float]:
         distortion_table: Dict[Tuple[int, int], Dict[int, float]]
         if is_direct:
             distortion_table = data["direct_distortion_table"]
         else:
             distortion_table = data["inverse_distortion_table"]
 
-        probs: List[float] = []
+        probs: Dict[Tuple[int, int], float] = {}
         for src_index, trg_index in alignment:
             i = src_index + 1
             j = trg_index + 1
@@ -448,12 +483,12 @@ class Ibm3GizaAligner(GizaAligner):
             elem = distortion_table.get((i, len(trg_words)))
             if elem is not None:
                 prob = elem.get(j, 0.0)
-            probs.append(max(PROB_SMOOTH, prob))
+            probs[(src_index, trg_index)] = max(PROB_SMOOTH, prob)
         return probs
 
     def _load_distortion_table(self, align_model: str) -> Dict[Tuple[int, int], Dict[int, float]]:
         table: Dict[Tuple[int, int], Dict[int, float]] = {}
-        for line in load_corpus(self.model_dir / f"src_trg_{align_model}.d3.final"):
+        for line in load_corpus(self.model_dir / f"src_trg_{align_model}.d{self.file_suffix}"):
             fields = line.split(maxsplit=5)
             j = int(fields[0])
             i = int(fields[1])
@@ -492,8 +527,8 @@ class Ibm4GizaAligner(GizaAligner):
         }
 
     def _get_alignment_probs(
-        self, data: Any, src_words: List[str], trg_words: List[str], alignment: List[Tuple[int, int]], is_direct: bool
-    ) -> List[float]:
+        self, data: Any, src_words: List[str], trg_words: List[str], alignment: Set[Tuple[int, int]], is_direct: bool
+    ) -> Dict[Tuple[int, int], float]:
         head_distortion_table: Dict[Tuple[int, int], Dict[int, float]]
         nonhead_distortion_table: Dict[int, Dict[int, float]]
         src_classes: Dict[str, int]
@@ -515,7 +550,7 @@ class Ibm4GizaAligner(GizaAligner):
             j = trg_index + 1
             insort_left(cepts[i], j)
 
-        probs: List[float] = []
+        probs: Dict[Tuple[int, int], float] = {}
         for src_index, trg_index in alignment:
             i = src_index + 1
             j = trg_index + 1
@@ -531,17 +566,15 @@ class Ibm4GizaAligner(GizaAligner):
                 else:
                     s_prev_cept = src_words[prev_cept - 1]
                     src_word_class = src_classes[s_prev_cept]
-                    center = int(ceil(sum(cepts[i]) / len(cepts[i])))
+                    center = int(ceil(sum(cepts[prev_cept]) / len(cepts[prev_cept])))
                 dj = j - center
                 prob = 0.0
                 elem = head_distortion_table.get((src_word_class, trg_word_class))
                 if elem is not None:
                     prob = elem.get(dj, 0.0)
-                probs.append(
-                    max(
-                        PROB_SMOOTH,
-                        IBM4_SMOOTH_FACTOR / (2 * len(trg_words) - 1) + (1 - IBM4_SMOOTH_FACTOR) * prob,
-                    )
+                probs[(src_index, trg_index)] = max(
+                    PROB_SMOOTH,
+                    IBM4_SMOOTH_FACTOR / (2 * len(trg_words) - 1) + (1 - IBM4_SMOOTH_FACTOR) * prob,
                 )
             else:
                 pos_in_cept = cepts[i].index(j)
@@ -551,16 +584,21 @@ class Ibm4GizaAligner(GizaAligner):
                 elem = nonhead_distortion_table.get(trg_word_class)
                 if elem is not None:
                     prob = elem.get(dj, 0.0)
-                probs.append(
-                    max(PROB_SMOOTH, IBM4_SMOOTH_FACTOR / (len(trg_words) - 1) + (1 - IBM4_SMOOTH_FACTOR) * prob)
+                probs[(src_index, trg_index)] = max(
+                    PROB_SMOOTH, IBM4_SMOOTH_FACTOR / (len(trg_words) - 1) + (1 - IBM4_SMOOTH_FACTOR) * prob
                 )
         return probs
 
     def _load_word_classes(self, side: str) -> Dict[str, int]:
         word_classes: Dict[str, int] = {}
+        classes: Dict[str, int] = {}
         for line in load_corpus(self.model_dir / f"{side}.vcb.classes"):
             word, word_class_str = line.split("\t", maxsplit=2)
-            word_classes[word] = int(word_class_str)
+            class_index = classes.get(word_class_str)
+            if class_index is None:
+                class_index = len(classes) + 1
+                classes[word_class_str] = class_index
+            word_classes[word] = class_index
         return word_classes
 
     def _load_head_distortion_table(self, align_model: str) -> Dict[Tuple[int, int], Dict[int, float]]:
@@ -581,9 +619,10 @@ class Ibm4GizaAligner(GizaAligner):
         return table
 
     def _load_nonhead_distortion_table(self, align_model: str) -> Dict[int, Dict[int, float]]:
-        table: Dict[Tuple[int, int], Dict[int, float]] = {}
+        table: Dict[int, Dict[int, float]] = {}
         ext = "db4" if platform.system() == "Windows" else "D4"
         is_key_line = True
+        trg_word_class = 0
         for line in load_corpus(self.model_dir / f"src_trg_{align_model}.{ext}.final"):
             fields = line.split()
             if is_key_line:

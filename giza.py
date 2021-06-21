@@ -36,6 +36,7 @@ def main() -> None:
     parser.add_argument("--mh", type=int, default=None, metavar="ITERATIONS", help="The number of HMM iterations")
     parser.add_argument("--m3", type=int, default=None, metavar="ITERATIONS", help="The number of IBM-3 iterations")
     parser.add_argument("--m4", type=int, default=None, metavar="ITERATIONS", help="The number of IBM-4 iterations")
+    parser.add_argument("--quiet", default=False, action="store_true", help="Quiet display")
     args = parser.parse_args()
 
     print("Installing dependencies...", end="", flush=True)
@@ -59,11 +60,13 @@ def main() -> None:
             aligner = Ibm3GizaAligner(bin_dir, temp_dir, m1=args.m1, m2=args.m2, mh=args.mh, m3=args.m3)
         elif model == "ibm4":
             aligner = Ibm4GizaAligner(bin_dir, temp_dir, m1=args.m1, m2=args.m2, mh=args.mh, m3=args.m3, m4=args.m4)
+        else:
+            raise RuntimeError("Invalid model type.")
 
         source_path = Path(args.source)
         target_path = Path(args.target)
         print("Training...")
-        aligner.train(source_path, target_path)
+        aligner.train(source_path, target_path, quiet=args.quiet)
 
         if args.alignments is not None:
             alignments_file_path = Path(args.alignments)
