@@ -56,9 +56,9 @@ def main() -> None:
         elif model == "hmm":
             aligner = HmmGizaAligner(bin_dir, temp_dir, m1=args.m1, mh=args.mh)
         elif model == "ibm3":
-            aligner = Ibm3GizaAligner(bin_dir, temp_dir, m1=args.m1, mh=args.mh, m3=args.m3)
+            aligner = Ibm3GizaAligner(bin_dir, temp_dir, m1=args.m1, m2=args.m2, mh=args.mh, m3=args.m3)
         elif model == "ibm4":
-            aligner = Ibm4GizaAligner(bin_dir, temp_dir, m1=args.m1, mh=args.mh, m3=args.m3, m4=args.m4)
+            aligner = Ibm4GizaAligner(bin_dir, temp_dir, m1=args.m1, m2=args.m2, mh=args.mh, m3=args.m3, m4=args.m4)
 
         source_path = Path(args.source)
         target_path = Path(args.target)

@@ -245,8 +245,8 @@ class GizaAligner:
         ]
         if self.m1 is not None:
             args.extend(["-m1", str(self.m1)])
-        if self.m2 is not None:
-            args.extend(["-m2", str(self.m2)])
+        if self.m2 is not None and self.mh is None:
+            args.extend(["-m2", str(self.m2), "-mh", "0"])
         if self.mh is not None:
             args.extend(["-mh", str(self.mh)])
         if self.m3 is not None:
@@ -419,10 +419,11 @@ class Ibm3GizaAligner(GizaAligner):
         bin_dir: Path,
         model_dir: Path,
         m1: Optional[int] = None,
+        m2: Optional[int] = None,
         mh: Optional[int] = None,
         m3: Optional[int] = None,
     ) -> None:
-        super().__init__(bin_dir, model_dir, m1=m1, mh=mh, m3=m3, m4=0)
+        super().__init__(bin_dir, model_dir, m1=m1, m2=m2, mh=mh, m3=m3, m4=0)
 
     def _init_alignment_probs_data(self) -> Any:
         return {
@@ -473,11 +474,12 @@ class Ibm4GizaAligner(GizaAligner):
         bin_dir: Path,
         model_dir: Path,
         m1: Optional[int] = None,
+        m2: Optional[int] = None,
         mh: Optional[int] = None,
         m3: Optional[int] = None,
         m4: Optional[int] = None,
     ) -> None:
-        super().__init__(bin_dir, model_dir, m1=m1, mh=mh, m3=m3, m4=m4)
+        super().__init__(bin_dir, model_dir, m1=m1, m2=m2, mh=mh, m3=m3, m4=m4)
 
     def _init_alignment_probs_data(self) -> Any:
         return {
