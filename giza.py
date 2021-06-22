@@ -12,7 +12,12 @@ def main() -> None:
     parser.add_argument("--source", type=str, required=True, metavar="PATH", help="The source corpus")
     parser.add_argument("--target", type=str, required=True, metavar="PATH", help="The target corpus")
     parser.add_argument("--alignments", type=str, default=None, metavar="PATH", help="The output alignments")
-    parser.add_argument("--probs", type=str, default=None, metavar="PATH", help="The output alignment probabilities")
+    parser.add_argument(
+        "--include-probs",
+        default=False,
+        action="store_true",
+        help="Include alignment probabilities in output alignments",
+    )
     parser.add_argument("--lexicon", type=str, default=None, metavar="PATH", help="The output lexicon")
     parser.add_argument(
         "--lexicon-threshold", type=float, default=0.0, metavar="THRESHOLD", help="The lexicon probability threshold"
@@ -65,14 +70,15 @@ def main() -> None:
 
         source_path = Path(args.source)
         target_path = Path(args.target)
-        print("Training...")
+        print("Training...", end="" if args.quiet else "\n", flush=args.quiet)
         aligner.train(source_path, target_path, quiet=args.quiet)
+        if args.quiet:
+            print(" done.")
 
         if args.alignments is not None:
             alignments_file_path = Path(args.alignments)
-            alignment_probs_file_path = None if args.probs is None else Path(args.probs)
             print("Generating alignments...", end="", flush=True)
-            aligner.align(alignments_file_path, alignment_probs_file_path, args.sym_heuristic)
+            aligner.align(alignments_file_path, args.include_probs, args.sym_heuristic)
             print(" done.")
         if args.lexicon is not None:
             lexicon_path = Path(args.lexicon)

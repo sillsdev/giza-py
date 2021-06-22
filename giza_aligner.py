@@ -83,7 +83,7 @@ class GizaAligner:
     def align(
         self,
         alignments_file_path: Path,
-        alignment_probs_file_path: Optional[Path] = None,
+        include_probs: bool = False,
         sym_heuristic: str = "grow-diag-final-and",
     ) -> None:
         src_trg_alignments_file_path = self.model_dir / f"src_trg_invswm.A{self.file_suffix}.all"
@@ -104,14 +104,12 @@ class GizaAligner:
             "r",
             encoding="utf-8-sig",
         ) as sym_alignments_file:
-            alignment_probs_file: Optional[IO] = None
             alignment_probs_data: Any = None
             direct_alignments_file: Optional[IO] = None
             inverse_alignments_file: Optional[IO] = None
             direct_alignments: Optional[Iterator[Set[Tuple[int, int]]]] = None
             inverse_alignments: Optional[Iterator[Set[Tuple[int, int]]]] = None
-            if alignment_probs_file_path is not None:
-                alignment_probs_file = open(alignment_probs_file_path, "w", encoding="utf-8", newline="\n")
+            if include_probs:
                 alignment_probs_data = self._init_alignment_probs_data()
                 direct_alignments_file = open(src_trg_alignments_file_path, "r", encoding="utf-8-sig")
                 direct_alignments = iter(parse_giza_alignments(direct_alignments_file))
@@ -120,8 +118,6 @@ class GizaAligner:
             try:
                 for src_str, trg_str in zip(load_corpus(src_file_path), load_corpus(trg_file_path)):
                     if len(src_str) == 0 or len(trg_str) == 0:
-                        if alignment_probs_file is not None:
-                            alignment_probs_file.write("\n")
                         alignments_file.write("\n")
                         continue
 
@@ -129,11 +125,7 @@ class GizaAligner:
                     trg_tokens = trg_str.split()
                     alignment_str = sym_alignments_file.readline().strip()
 
-                    if (
-                        alignment_probs_file is not None
-                        and direct_alignments is not None
-                        and inverse_alignments is not None
-                    ):
+                    if direct_alignments is not None and inverse_alignments is not None:
                         direct_alignment = next(direct_alignments)
                         inverse_alignment = next(inverse_alignments)
 
@@ -144,23 +136,20 @@ class GizaAligner:
                             alignment_probs_data, trg_tokens, src_tokens, inverse_alignment, False
                         )
 
-                        first = True
+                        new_alignment_str = ""
                         for word_pair_str in alignment_str.split():
                             src_index_str, trg_index_str = word_pair_str.split("-", maxsplit=2)
                             src_index = int(src_index_str)
                             trg_index = int(trg_index_str)
                             direct_prob = direct_probs.get((src_index, trg_index), 0.0)
                             inverse_prob = inverse_probs.get((trg_index, src_index), 0.0)
-                            if not first:
-                                alignment_probs_file.write(" ")
-                            alignment_probs_file.write(str(round(max(direct_prob, inverse_prob), 8)))
-                            first = False
-
-                        alignment_probs_file.write("\n")
+                            prob = round(max(direct_prob, inverse_prob), 8)
+                            if len(new_alignment_str) != 0:
+                                new_alignment_str += " "
+                            new_alignment_str += f"{src_index}-{trg_index}:{prob}"
+                        alignment_str = new_alignment_str
                     alignments_file.write(alignment_str + "\n")
             finally:
-                if alignment_probs_file is not None:
-                    alignment_probs_file.close()
                 if direct_alignments_file is not None:
                     direct_alignments_file.close()
                 if inverse_alignments_file is not None:
@@ -440,12 +429,12 @@ class HmmGizaAligner(GizaAligner):
     def align(
         self,
         alignments_file_path: Path,
-        alignment_probs_file_path: Optional[Path] = None,
+        include_probs: bool = False,
         sym_heuristic: str = "grow-diag-final-and",
     ) -> None:
-        if alignment_probs_file_path is not None:
+        if include_probs:
             raise RuntimeError("HMM does not support generating alignment probabilities.")
-        super().align(alignments_file_path, alignment_probs_file_path, sym_heuristic)
+        super().align(alignments_file_path, include_probs, sym_heuristic)
 
 
 class Ibm3GizaAligner(GizaAligner):

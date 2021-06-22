@@ -60,7 +60,14 @@ python3 giza.py --source <src_path> --target <trg_path> --alignments <output_pat
 
 The source and target corpora files must be text files where tokens are separated by spaces. Giza-py will output the alignments in Pharaoh format.
 
-Probabilties for each aligned word pair can be output by using the `--probs` argument. Giza-py will generate a text file at the specified path with probabilities that correspond to each aligned word pair in the output alignment file.
+Alignment probabilties for each aligned word pair can be output by using the `--include-probs` argument. Giza-py will include alignment probabilities in the generated alignment file. The probabilities are separated from each word pair using a colon `:` delimiter. Here is an example of the Pharaoh format with probabilities included:
+
+```
+7-0:0.22661511 5-3:0.4715056 3-6:0.67267063 1-7:0.10234439
+0-0:0.75820181 4-1:0.24716581 8-4:0.72411429
+```
+
+_Note: The probabilities included in the alignment file are only alignment probabilities and do not include translation probabilities. If you want translation probabilties, they can be obtained by [generating a lexicon](#generating-a-lexicon)._
 
 ### Models
 
@@ -70,7 +77,7 @@ By default, Giza-py will generate alignments using the IBM-4 model. To specify a
 python3 giza.py --source <src_path> --target <trg_path> --alignments <output_path> --model hmm
 ```
 
-The following models are supported:
+The following models are supported (default # of iterations):
 
 - ibm1
   - IBM-1: 5 iterations
