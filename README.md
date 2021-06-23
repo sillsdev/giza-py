@@ -79,29 +79,32 @@ python3 giza.py --source <src_path> --target <trg_path> --alignments <output_pat
 
 The following models are supported (default # of iterations):
 
-- ibm1
-  - IBM-1: 5 iterations
-- ibm2
-  - IBM-1: 5 iterations
-  - IBM-2: 5 iterations
-- hmm
-  - IBM-1: 5 iterations
-  - HMM: 5 iterations
-- ibm3
-  - IBM-1: 5 iterations
-  - HMM: 5 iterations
-  - IBM-3: 5 iterations
-- ibm4
-  - IBM-1: 5 iterations
-  - HMM: 5 iterations
-  - IBM-3: 5 iterations
-  - IBM-4: 5 iterations
 
 The number of iterations for each stage of training can be specified using the `--m{model_number}` arguments. The following example will train an IBM-4 model with 10 iterations for the IBM-1 stage:
 
 ```
 python3 giza.py --source <src_path> --target <trg_path> --alignments <output_path> --m1 10
 ```
+
+The following are the parameters for configuring the number of iterations for each supported model:
+
+- ibm1
+  - m1: IBM-1 (default: 5 iterations)
+- ibm2
+  - m1: IBM-1 (default: 5 iterations)
+  - m2: IBM-2 (default: 5 iterations)
+- hmm
+  - m1: IBM-1 (default: 5 iterations)
+  - mh: HMM (default: 5 iterations)
+- ibm3
+  - m1: IBM-1 (default: 5 iterations)
+  - mh: HMM (default: 5 iterations)
+  - m3: IBM-3 (default: 5 iterations)
+- ibm4
+  - m1: IBM-1 (default: 5 iterations)
+  - mh: HMM (default: 5 iterations)
+  - m3: IBM-3 (default: 5 iterations)
+  - m4: IBM-4 (default: 5 iterations)
 
 ### Symmetrization
 
