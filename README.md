@@ -77,9 +77,6 @@ By default, Giza-py will generate alignments using the IBM-4 model. To specify a
 python3 giza.py --source <src_path> --target <trg_path> --alignments <output_path> --model hmm
 ```
 
-The following models are supported (default # of iterations):
-
-
 The number of iterations for each stage of training can be specified using the `--m{model_number}` arguments. The following example will train an IBM-4 model with 10 iterations for the IBM-1 stage:
 
 ```
