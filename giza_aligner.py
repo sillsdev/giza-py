@@ -272,7 +272,7 @@ class GizaAligner:
                 args.extend(["-t2", str(self.m2)])
             elif self.m1 is None or self.m1 > 0:
                 args.extend(["-t1", str(5 if self.m1 is None else self.m1)])
-        subprocess.run(args, stdout=subprocess.DEVNULL if quiet else None, stderr=subprocess.DEVNULL)
+        subprocess.run(args, stdout=subprocess.DEVNULL if quiet else None, stderr=subprocess.DEVNULL if quiet else None)
 
     def _save_alignments(self, model_prefix: Path, output_file_path: Path) -> None:
         alignments: List[Tuple[int, str]] = []
@@ -422,19 +422,111 @@ class Ibm2GizaAligner(GizaAligner):
         return table
 
 
+def normalize(values: List[float]) -> None:
+    sum_values = sum(values)
+    for i in range(len(values)):
+        if sum_values > 0:
+            values[i] /= sum_values
+        else:
+            values[i] = 1.0 / len(values)
+
+
+def smooth(values: List[float], p: float) -> None:
+    pp = p / len(values)
+    for i in range(len(values)):
+        values[i] = (1.0 - p) * values[i] + pp
+
+
 class HmmGizaAligner(GizaAligner):
     def __init__(self, bin_dir: Path, model_dir: Path, m1: Optional[int] = None, mh: Optional[int] = None) -> None:
         super().__init__(bin_dir, model_dir, m1=m1, mh=mh, m3=0, m4=0)
 
-    def align(
-        self,
-        alignments_file_path: Path,
-        include_probs: bool = False,
-        sym_heuristic: str = "grow-diag-final-and",
-    ) -> None:
-        if include_probs:
-            raise RuntimeError("HMM does not support generating alignment probabilities.")
-        super().align(alignments_file_path, include_probs, sym_heuristic)
+    def _init_alignment_probs_data(self) -> Any:
+        return {
+            "direct_alignment_table": self._load_alignment_table("invswm"),
+            "direct_alpha_table": self._load_alpha_table("invswm"),
+            "inverse_alignment_table": self._load_alignment_table("swm"),
+            "inverse_alpha_table": self._load_alpha_table("swm"),
+        }
+
+    def _get_alignment_probs(
+        self, data: Any, src_words: List[str], trg_words: List[str], alignment: Set[Tuple[int, int]], is_direct: bool
+    ) -> Dict[Tuple[int, int], float]:
+        alignment_table: Dict[int, float]
+        alpha_table: Dict[int, List[float]]
+        if is_direct:
+            alignment_table = data["direct_alignment_table"]
+            alpha_table = data["direct_alpha_table"]
+        else:
+            alignment_table = data["inverse_alignment_table"]
+            alpha_table = data["inverse_alpha_table"]
+
+        probs_table: List[List[float]] = []
+        for i1 in range(len(src_words) * 2):
+            i1_real = i1 % len(src_words)
+            al: List[float] = []
+            for i2 in range(len(src_words)):
+                al.append(alignment_table.get(i1_real - i2, 1.0 / (2 * (len(src_words) - 1))))
+            normalize(al)
+            smooth(al, 0.2)
+            i1_probs: List[float] = []
+            for i2 in range(len(src_words) * 2):
+                i2_real = i2 % len(src_words)
+                empty_i2 = i2 >= len(src_words)
+                if empty_i2:
+                    prob = 0.4 if i1_real == i2_real else 0
+                else:
+                    prob = al[i2_real]
+                i1_probs.append(prob)
+            normalize(i1_probs)
+            probs_table.append(i1_probs)
+
+        alpha = alpha_table[len(src_words)]
+
+        asymm_al: List[int] = [-1] * len(trg_words)
+        for src_index, trg_index in alignment:
+            asymm_al[trg_index] = src_index
+
+        probs: Dict[Tuple[int, int], float] = {}
+        prev_src_index = -1
+        for trg_index in range(len(asymm_al)):
+            src_index = asymm_al[trg_index]
+            if prev_src_index == -1:
+                if src_index == -1:
+                    src_index = len(src_words)
+                else:
+                    probs[(src_index, trg_index)] = alpha[src_index]
+            elif src_index == -1:
+                src_index = prev_src_index + len(src_words)
+            else:
+                probs[(src_index, trg_index)] = probs_table[prev_src_index][src_index]
+            prev_src_index = src_index
+        return probs
+
+    def _load_alignment_table(self, align_model: str) -> Dict[int, float]:
+        table: Dict[int, float] = {}
+        for line in load_corpus(self.model_dir / f"src_trg_{align_model}.h{self.file_suffix}"):
+            fields = line.split()
+            for i in range(7, len(fields), 2):
+                pos = int(fields[i])
+                value = float(fields[i + 1])
+                table[pos] = value
+
+        return table
+
+    def _load_alpha_table(self, align_model: str) -> Dict[int, List[float]]:
+        table: Dict[int, List[float]] = {}
+        for line in load_corpus(self.model_dir / f"src_trg_{align_model}.h{self.file_suffix}.alpha"):
+            fields = line.split()
+            src_len = int(fields[0]) / 2
+            values: List[float] = []
+            for i in range(2, len(fields)):
+                value = float(fields[i])
+                values.append(value)
+            normalize(values)
+            table[src_len] = values
+
+        return table
 
 
 class Ibm3GizaAligner(GizaAligner):
