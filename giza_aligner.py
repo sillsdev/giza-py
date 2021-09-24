@@ -497,7 +497,8 @@ class HmmGizaAligner(GizaAligner):
                 else:
                     probs[(src_index, trg_index)] = alpha[src_index]
             elif src_index == -1:
-                src_index = prev_src_index + len(src_words)
+                if prev_src_index < len(src_words):
+                    src_index = prev_src_index + len(src_words)
             else:
                 probs[(src_index, trg_index)] = probs_table[prev_src_index][src_index]
             prev_src_index = src_index
