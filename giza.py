@@ -1,5 +1,4 @@
 import argparse
-import subprocess
 import tempfile
 from pathlib import Path
 
@@ -43,10 +42,6 @@ def main() -> None:
     parser.add_argument("--m4", type=int, default=None, metavar="ITERATIONS", help="The number of IBM-4 iterations")
     parser.add_argument("--quiet", default=False, action="store_true", help="Quiet display")
     args = parser.parse_args()
-
-    print("Installing dependencies...", end="", flush=True)
-    subprocess.run(["dotnet", "tool", "restore"], stdout=subprocess.DEVNULL)
-    print(" done.")
 
     bin_dir = Path(args.bin)
 

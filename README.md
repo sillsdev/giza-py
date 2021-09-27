@@ -8,16 +8,14 @@ giza-py is a simple, Python-based, command-line runner for MGIZA++, a popular to
 
 Giza-py requires [Python 3.7](https://www.python.org/downloads/) or greater.
 
-### .NET Core SDK
-
-Giza-py requires that the [.NET Core 3.1 SDK](https://dotnet.microsoft.com/download) is installed.
-
 ### Giza-py
 
-To install Giza-py, simply clone the repo:
+To install Giza-py, clone the repo and install pip dependencies:
 
 ```
 git clone https://github.com/sillsdev/giza-py.git
+cd giza-py
+pip install -r requirements.txt
 ```
 
 ### MGIZA++
