@@ -48,7 +48,7 @@ class GizaAligner:
             suffix = f"1.{5 if self.m1 is None else self.m1}"
         return suffix
 
-    def train(self, src_file_path: Path, trg_file_path: Path, quiet: bool = False) -> None:
+    def train(self, src_file_path: Path, trg_file_path: Path, quiet: bool = False, optArgs: List[str] = []) -> None:
         self.model_dir.mkdir(exist_ok=True)
         dest_src_file_path = self.model_dir / "src.txt"
         shutil.copyfile(src_file_path, dest_src_file_path)
@@ -73,12 +73,12 @@ class GizaAligner:
 
         src_trg_prefix = src_trg_snt_file_path.with_suffix("")
         src_trg_output_prefix = src_trg_prefix.parent / (src_trg_prefix.name + "_invswm")
-        self._execute_mgiza(src_trg_snt_file_path, src_trg_output_prefix, quiet)
+        self._execute_mgiza(src_trg_snt_file_path, src_trg_output_prefix, quiet, optArgs=optArgs)
         src_trg_alignments_file_path = src_trg_output_prefix.with_suffix(f".A{self.file_suffix}.all")
         self._save_alignments(src_trg_output_prefix, src_trg_alignments_file_path)
 
         trg_src_output_prefix = src_trg_prefix.parent / (src_trg_prefix.name + "_swm")
-        self._execute_mgiza(trg_src_snt_file_path, trg_src_output_prefix, quiet)
+        self._execute_mgiza(trg_src_snt_file_path, trg_src_output_prefix, quiet, optArgs=optArgs)
         trg_src_alignments_file_path = trg_src_output_prefix.with_suffix(f".A{self.file_suffix}.all")
         self._save_alignments(trg_src_output_prefix, trg_src_alignments_file_path)
 
@@ -230,7 +230,7 @@ class GizaAligner:
         ]
         subprocess.run(args, stdout=subprocess.DEVNULL if quiet else None, stderr=subprocess.DEVNULL)
 
-    def _execute_mgiza(self, snt_file_path: Path, output_path: Path, quiet: bool) -> None:
+    def _execute_mgiza(self, snt_file_path: Path, output_path: Path, quiet: bool, optArgs: List[str]=[]) -> None:
         mgiza_path = self.bin_dir / "mgiza"
         if platform.system() == "Windows":
             mgiza_path = mgiza_path.with_suffix(".exe")
@@ -253,7 +253,8 @@ class GizaAligner:
             str(snt_dir / f"{prefix2}.vcb"),
             "-o",
             str(output_path),
-        ]
+        ] + optArgs
+
         if self.m1 is not None:
             args.extend(["-m1", str(self.m1)])
         if self.m2 is not None and (self.mh is None or self.mh == 0):

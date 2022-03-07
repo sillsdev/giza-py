@@ -40,6 +40,7 @@ def main() -> None:
     parser.add_argument("--mh", type=int, default=None, metavar="ITERATIONS", help="The number of HMM iterations")
     parser.add_argument("--m3", type=int, default=None, metavar="ITERATIONS", help="The number of IBM-3 iterations")
     parser.add_argument("--m4", type=int, default=None, metavar="ITERATIONS", help="The number of IBM-4 iterations")
+    parser.add_argument("--maxsentencelength", type=int, default=101, metavar="TRAINING", help="The maximum sentence length")
     parser.add_argument("--quiet", default=False, action="store_true", help="Quiet display")
     args = parser.parse_args()
 
@@ -47,6 +48,10 @@ def main() -> None:
 
     model: str = args.model
     model = model.lower()
+
+    optArgs: List[str] = [
+        "-ml", str(args.maxsentencelength)
+    ]
 
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
@@ -66,7 +71,7 @@ def main() -> None:
         source_path = Path(args.source)
         target_path = Path(args.target)
         print("Training...", end="" if args.quiet else "\n", flush=args.quiet)
-        aligner.train(source_path, target_path, quiet=args.quiet)
+        aligner.train(source_path, target_path, quiet=args.quiet, optArgs=optArgs)
         if args.quiet:
             print(" done.")
 
