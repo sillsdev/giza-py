@@ -41,6 +41,7 @@ def main() -> None:
     parser.add_argument("--m3", type=int, default=None, metavar="ITERATIONS", help="The number of IBM-3 iterations")
     parser.add_argument("--m4", type=int, default=None, metavar="ITERATIONS", help="The number of IBM-4 iterations")
     parser.add_argument("--maxsentencelength", type=int, default=101, metavar="TRAINING", help="The maximum sentence length")
+    parser.add_argument("--maxfertility", type=int, default=10, metavar="TRAINING", help="The maximum fertility parameter")
     parser.add_argument("--quiet", default=False, action="store_true", help="Quiet display")
     args = parser.parse_args()
 
@@ -50,7 +51,8 @@ def main() -> None:
     model = model.lower()
 
     optArgs: List[str] = [
-        "-ml", str(args.maxsentencelength)
+        "-ml", str(args.maxsentencelength),
+        "-maxfertility", str(args.maxfertility)
     ]
 
     with tempfile.TemporaryDirectory() as td:
